@@ -33,7 +33,7 @@ impl<V: PartialEq + Display + Hash + Clone> std::fmt::Display for OpVal<V> {
 }
 
 #[derive(Debug)]
-pub struct Node<E, I, V>
+pub struct Vertex<E, I, V>
 where
     E: Display + Clone,
     I: PartialEq + Display + Hash + Clone,
@@ -43,7 +43,7 @@ where
     value: OpVal<V>,
     edges: Vec<Rc<RefCell<Edge<E, I, V>>>>,
 }
-impl<E, I, V> Node<E, I, V>
+impl<E, I, V> Vertex<E, I, V>
 where
     E: Display + Clone,
     I: PartialEq + Display + Hash + Clone,
@@ -65,9 +65,9 @@ where
     V: PartialEq + Display + Hash + Clone,
 {
     edge_value: Rc<Option<E>>,
-    child: Weak<RefCell<Node<E, I, V>>>,
+    child: Weak<RefCell<Vertex<E, I, V>>>,
 }
-impl<E, I, V> PartialEq for Node<E, I, V>
+impl<E, I, V> PartialEq for Vertex<E, I, V>
 where
     E: Display + Clone,
     I: PartialEq + Display + Hash + Clone,
@@ -84,7 +84,7 @@ where
     I: PartialEq + Display + Hash + Clone,
     V: PartialEq + Display + Hash + Clone,
 {
-    nodes: Vec<Rc<RefCell<Node<E, I, V>>>>,
+    vertices: Vec<Rc<RefCell<Vertex<E, I, V>>>>,
 }
 impl<E, I, V> Graph<E, I, V>
 where
@@ -93,21 +93,21 @@ where
     V: PartialEq + Display + Hash + Clone,
 {
     pub fn new() -> Graph<E, I, V> {
-        Graph { nodes: vec![] }
+        Graph { vertices: vec![] }
     }
-    pub fn add_vertex(&mut self, id: I, value: Option<V>) -> Rc<RefCell<Node<E, I, V>>> {
-        let v = Rc::new(RefCell::new(Node {
+    pub fn add_vertex(&mut self, id: I, value: Option<V>) -> Rc<RefCell<Vertex<E, I, V>>> {
+        let v = Rc::new(RefCell::new(Vertex {
             id,
             value: OpVal(value),
             edges: vec![],
         }));
-        self.nodes.push(Rc::clone(&v));
+        self.vertices.push(Rc::clone(&v));
         v
     }
-    pub fn delete_vertex(&mut self, vertex: Rc<RefCell<Node<E, I, V>>>) {
-        match self.nodes.iter().position(|v1| *v1 == vertex) {
+    pub fn delete_vertex(&mut self, vertex: Rc<RefCell<Vertex<E, I, V>>>) {
+        match self.vertices.iter().position(|v1| *v1 == vertex) {
             Some(pos) => {
-                self.nodes.remove(pos);
+                self.vertices.remove(pos);
             }
             None => println!("Couldn't find vertex :/"),
         };
@@ -115,8 +115,8 @@ where
     pub fn add_edge(
         &self,
         edge_value: Option<E>,
-        v1: &Rc<RefCell<Node<E, I, V>>>,
-        v2: &Rc<RefCell<Node<E, I, V>>>,
+        v1: &Rc<RefCell<Vertex<E, I, V>>>,
+        v2: &Rc<RefCell<Vertex<E, I, V>>>,
     ) {
         //  since edge is connected to both points, they should share same value
         let edge_value = Rc::new(edge_value);
@@ -137,8 +137,8 @@ where
     }
     fn check_edge(
         &self,
-        v1: &Rc<RefCell<Node<E, I, V>>>,
-        v2: &Rc<RefCell<Node<E, I, V>>>,
+        v1: &Rc<RefCell<Vertex<E, I, V>>>,
+        v2: &Rc<RefCell<Vertex<E, I, V>>>,
     ) -> Result<usize> {
         let pos = match v1.as_ref().borrow().edges.iter().position(|edge| {
             match edge.as_ref().borrow().child.upgrade() {
@@ -154,8 +154,8 @@ where
     // god help me with this
     pub fn delete_edge(
         &self,
-        v1: &Rc<RefCell<Node<E, I, V>>>,
-        v2: &Rc<RefCell<Node<E, I, V>>>,
+        v1: &Rc<RefCell<Vertex<E, I, V>>>,
+        v2: &Rc<RefCell<Vertex<E, I, V>>>,
     ) -> Result<()> {
         let pos1 = self.check_edge(v1, v2)?;
         let pos2 = self.check_edge(v2, v1)?;
@@ -164,11 +164,11 @@ where
         Ok(())
     }
 
-    pub fn bfs(&self, start: Option<Rc<RefCell<Node<E, I, V>>>>) -> Result<()> {
-        let mut queue: Vec<Rc<RefCell<Node<E, I, V>>>> = vec![];
+    pub fn bfs(&self, start: Option<Rc<RefCell<Vertex<E, I, V>>>>) -> Result<()> {
+        let mut queue: Vec<Rc<RefCell<Vertex<E, I, V>>>> = vec![];
         match start {
             Some(v) => queue.push(v),
-            None => match self.nodes.get(0) {
+            None => match self.vertices.get(0) {
                 Some(v) => queue.push(Rc::clone(v)),
                 None => {
                     return Err(Error::new(
@@ -207,7 +207,7 @@ where
             .unwrap();
 
         let mut edges_collection: HashMap<(String, String), String> = HashMap::new();
-        for node in self.nodes.iter() {
+        for node in self.vertices.iter() {
             let node_id = &node.as_ref().borrow().id.to_string();
             let point_desc = format!("{} {}\n", &node_id, &node.as_ref().borrow().value);
             file.write_all(point_desc.as_bytes())?;
@@ -249,7 +249,7 @@ impl Graph<String, String, String> {
             split.next().expect("Failed to parse edges."),
         );
         let mut data;
-        let mut point_storage: HashMap<&str, Rc<RefCell<Node<String, String, String>>>> =
+        let mut point_storage: HashMap<&str, Rc<RefCell<Vertex<String, String, String>>>> =
             HashMap::new();
         for point in points.lines() {
             data = point.trim().split_ascii_whitespace();
@@ -300,7 +300,7 @@ mod tests {
         graph.add_vertex(1, Some("vertex 1"));
         graph.add_vertex(2, Some("vertex 2"));
 
-        assert!(graph.nodes.len() == 2);
+        assert!(graph.vertices.len() == 2);
     }
     #[test]
     fn add_edge() {
