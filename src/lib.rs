@@ -164,15 +164,17 @@ where
         Ok(())
     }
 
-    pub fn bfs(&self, start: Option<Rc<RefCell<Node<E, I, V>>>>) {
+    pub fn bfs(&self, start: Option<Rc<RefCell<Node<E, I, V>>>>) -> Result<()> {
         let mut queue: Vec<Rc<RefCell<Node<E, I, V>>>> = vec![];
         match start {
             Some(v) => queue.push(v),
             None => match self.nodes.get(0) {
                 Some(v) => queue.push(Rc::clone(v)),
                 None => {
-                    println!("Start point wasn't provided and graph is empty. Returning.");
-                    return;
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        "Start point wasn't provided and graph is empty. Returning.",
+                    ));
                 }
             },
         }
@@ -193,6 +195,7 @@ where
                 }
             }
         }
+        Ok(())
     }
 
     pub fn write_to_file(&self, filename: &str) -> Result<()> {
@@ -242,7 +245,7 @@ impl Graph<String, String, String> {
         let mut split = data.split("#");
 
         let (points, edges) = (
-            split.next().expect("Failed to fetch vertices."),
+            split.next().expect("Failed to parse vertices."),
             split.next().expect("Failed to parse edges."),
         );
         let mut data;
