@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Display;
 use std::fs::{self, OpenOptions};
 use std::hash::Hash;
 use std::io::{Error, ErrorKind, Result, Write};
@@ -11,32 +11,6 @@ use std::{
     rc::{Rc, Weak},
 };
 #[derive(Debug)]
-struct OptionalValue<V: PartialEq + Display + Clone>(Option<V>);
-
-impl<V: PartialEq + Display + Hash + Clone> PartialEq for OptionalValue<V> {
-    fn eq(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-impl<V: PartialEq + Display + Hash + Clone> Display for OptionalValue<V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match &self.0 {
-                Some(val) => val.to_string(),
-                None => "".to_string(),
-            }
-        )
-    }
-}
-impl<V: PartialEq + Display + Hash + Clone> AsRef<OptionalValue<V>> for OptionalValue<V> {
-    fn as_ref(&self) -> &OptionalValue<V> {
-        &self
-    }
-}
-
-#[derive(Debug)]
 pub struct Node<E, I, V>
 where
     E: Display + Clone,
@@ -44,7 +18,7 @@ where
     V: PartialEq + Display + Hash + Clone,
 {
     id: I,
-    value: OptionalValue<V>,
+    value: Option<V>,
     edges: Vec<Rc<RefCell<Edge<E, I, V>>>>,
 }
 
@@ -87,10 +61,6 @@ where
         Graph { nodes: vec![] }
     }
     pub fn add_vertex(&mut self, id: I, value: Option<V>) -> Rc<RefCell<Node<E, I, V>>> {
-        let value = match value {
-            Some(val) => OptionalValue(Some(val)),
-            None => OptionalValue(Option::None),
-        };
         let v = Rc::new(RefCell::new(Node {
             id,
             value,
@@ -129,31 +99,16 @@ where
         v1: &Rc<RefCell<Node<E, I, V>>>,
         v2: &Rc<RefCell<Node<E, I, V>>>,
     ) -> Result<usize> {
-        let pos = v1
-            .as_ref()
-            .borrow()
-            .edges
-            .iter()
-            .position(|predicate| predicate.as_ref().borrow().child.upgrade().unwrap() == *v2);
-        // let pos = match v1.as_ref().borrow().edges.iter().position(|edge| {
-        //     match edge.as_ref().borrow().child.upgrade() {
-        //         Some(child) => child == *v2,
-        //         None => panic!(),
-        //     }
-        // }) {
-        //     Some(u) => u,
-        //     None => {
-        //         return Err(Error::new(
-        //             ErrorKind::NotFound,
-        //             format!(
-        //                 "Vertex {} is not connected to {}",
-        //                 v1.as_ref().borrow().id,
-        //                 v2.as_ref().borrow().id,
-        //             ),
-        //         ))
-        //     }
-        // };
-        Ok(0)
+        let pos = match v1.as_ref().borrow().edges.iter().position(|edge| {
+            match edge.as_ref().borrow().child.upgrade() {
+                Some(child) => child == *v2,
+                None => false,
+            }
+        }) {
+            Some(u) => u,
+            None => return Err(Error::new(ErrorKind::NotFound, "")),
+        };
+        Ok(pos)
     }
     // god help me with this
     pub fn delete_edge(
@@ -162,9 +117,9 @@ where
         v2: &Rc<RefCell<Node<E, I, V>>>,
     ) -> Result<()> {
         let pos1 = self.check_edge(v1, v2)?;
-        //let pos2 = self.check_edge(v2, v1)?;
-        //v1.borrow_mut().edges.remove(pos1);
-        //v2.borrow_mut().edges.remove(pos2);
+        let pos2 = self.check_edge(v2, v1)?;
+        v1.borrow_mut().edges.remove(pos1);
+        v2.borrow_mut().edges.remove(pos2);
         Ok(())
     }
 
@@ -187,7 +142,10 @@ where
             println!(
                 "{} {}",
                 &vertex.as_ref().borrow().id,
-                &vertex.as_ref().borrow().value
+                match &vertex.as_ref().borrow().value.as_ref() {
+                    Some(val) => val.to_string(),
+                    None => "".to_string(),
+                }
             );
             for edge in &vertex.as_ref().borrow().edges {
                 if let Some(child) = edge.as_ref().borrow().child.upgrade() {
@@ -210,7 +168,14 @@ where
         let mut edges_collection: HashMap<(String, String), String> = HashMap::new();
         for node in self.nodes.iter() {
             let node_id = &node.as_ref().borrow().id;
-            let point_desc = format!("{} {}\n", &node_id, &node.as_ref().borrow().value);
+            let point_desc = format!(
+                "{} {}\n",
+                &node_id,
+                match &node.as_ref().borrow().value {
+                    Some(val) => val.to_string(),
+                    None => "".to_string(),
+                }
+            );
             file.write_all(point_desc.as_bytes())?;
             for edge in &node.as_ref().borrow().edges {
                 let id = &edge
@@ -324,6 +289,7 @@ mod tests {
         let v1 = graph.add_vertex(1, Some("vertex 1"));
         let v2 = graph.add_vertex(2, Some("vertex 2"));
         graph.add_edge(Some("edge between v1 and v2"), &v1, &v2);
+
         graph.write_to_file("test_graph.tgf").unwrap();
     }
 
@@ -333,7 +299,7 @@ mod tests {
         let v1 = graph.add_vertex(1, Some("vertex 1"));
         let v2 = graph.add_vertex(2, Some("vertex 2"));
         graph.add_edge(Some("edge between v1 and v2"), &v1, &v2);
-        graph.delete_edge(&v1, &v2);
+        graph.delete_edge(&v1, &v2).unwrap();
     }
     #[test]
     #[should_panic]
@@ -342,6 +308,7 @@ mod tests {
         let v1 = graph.add_vertex(1, Some("vertex 1"));
         let v2 = graph.add_vertex(2, Some("vertex 2"));
         graph.add_edge(Some("edge between v1 and v2"), &v1, &v2);
+        graph.delete_edge(&v1, &v2).unwrap();
         graph.delete_edge(&v1, &v2).unwrap();
     }
 }
