@@ -11,6 +11,28 @@ use std::{
     rc::{Rc, Weak},
 };
 #[derive(Debug)]
+struct OpVal<V: PartialEq + Display + Hash + Clone>(Option<V>);
+
+impl<V: PartialEq + Display + Hash + Clone> PartialEq for OpVal<V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<V: PartialEq + Display + Hash + Clone> std::fmt::Display for OpVal<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self.0 {
+                Some(val) => val.to_string(),
+                None => "".to_string(),
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
 pub struct Node<E, I, V>
 where
     E: Display + Clone,
@@ -18,8 +40,21 @@ where
     V: PartialEq + Display + Hash + Clone,
 {
     id: I,
-    value: Option<V>,
+    value: OpVal<V>,
     edges: Vec<Rc<RefCell<Edge<E, I, V>>>>,
+}
+impl<E, I, V> Node<E, I, V>
+where
+    E: Display + Clone,
+    I: PartialEq + Display + Hash + Clone,
+    V: PartialEq + Display + Hash + Clone,
+{
+    pub fn change_value(&mut self, val: Option<V>) {
+        self.value = match val {
+            Some(val) => OpVal(Some(val)),
+            None => OpVal(Option::None),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -63,7 +98,7 @@ where
     pub fn add_vertex(&mut self, id: I, value: Option<V>) -> Rc<RefCell<Node<E, I, V>>> {
         let v = Rc::new(RefCell::new(Node {
             id,
-            value,
+            value: OpVal(value),
             edges: vec![],
         }));
         self.nodes.push(Rc::clone(&v));
@@ -85,14 +120,20 @@ where
     ) {
         //  since edge is connected to both points, they should share same value
         let edge_value = Rc::new(edge_value);
-        v1.borrow_mut().edges.push(Rc::new(RefCell::new(Edge {
-            edge_value: Rc::clone(&edge_value),
-            child: Rc::downgrade(v2),
-        })));
-        v2.borrow_mut().edges.push(Rc::new(RefCell::new(Edge {
-            edge_value: Rc::clone(&edge_value),
-            child: Rc::downgrade(v1),
-        })));
+        v1.as_ref()
+            .borrow_mut()
+            .edges
+            .push(Rc::new(RefCell::new(Edge {
+                edge_value: Rc::clone(&edge_value),
+                child: Rc::downgrade(v2),
+            })));
+        v2.as_ref()
+            .borrow_mut()
+            .edges
+            .push(Rc::new(RefCell::new(Edge {
+                edge_value: Rc::clone(&edge_value),
+                child: Rc::downgrade(v1),
+            })));
     }
     fn check_edge(
         &self,
@@ -118,8 +159,8 @@ where
     ) -> Result<()> {
         let pos1 = self.check_edge(v1, v2)?;
         let pos2 = self.check_edge(v2, v1)?;
-        v1.borrow_mut().edges.remove(pos1);
-        v2.borrow_mut().edges.remove(pos2);
+        v1.as_ref().borrow_mut().edges.remove(pos1);
+        v2.as_ref().borrow_mut().edges.remove(pos2);
         Ok(())
     }
 
@@ -142,10 +183,7 @@ where
             println!(
                 "{} {}",
                 &vertex.as_ref().borrow().id,
-                match &vertex.as_ref().borrow().value.as_ref() {
-                    Some(val) => val.to_string(),
-                    None => "".to_string(),
-                }
+                &vertex.as_ref().borrow().value
             );
             for edge in &vertex.as_ref().borrow().edges {
                 if let Some(child) = edge.as_ref().borrow().child.upgrade() {
@@ -167,33 +205,21 @@ where
 
         let mut edges_collection: HashMap<(String, String), String> = HashMap::new();
         for node in self.nodes.iter() {
-            let node_id = &node.as_ref().borrow().id;
-            let point_desc = format!(
-                "{} {}\n",
-                &node_id,
-                match &node.as_ref().borrow().value {
-                    Some(val) => val.to_string(),
-                    None => "".to_string(),
-                }
-            );
+            let node_id = &node.as_ref().borrow().id.to_string();
+            let point_desc = format!("{} {}\n", &node_id, &node.as_ref().borrow().value);
             file.write_all(point_desc.as_bytes())?;
             for edge in &node.as_ref().borrow().edges {
-                let id = &edge
-                    .as_ref()
-                    .borrow()
-                    .child
-                    .upgrade()
-                    .unwrap()
-                    .as_ref()
-                    .borrow()
-                    .id
-                    .clone();
+                let id = match &edge.as_ref().borrow().child.upgrade() {
+                    Some(child) => child.as_ref().borrow().id.clone(),
+                    None => return Err(Error::new(ErrorKind::NotFound, "")),
+                }
+                .to_string();
                 // our edges are bidirectional and we have to check for inverted duplicates
-                if edges_collection.contains_key(&(id.to_string(), node_id.to_string())) {
+                if edges_collection.contains_key(&(id.to_string(), node_id.clone())) {
                     continue;
                 } else {
                     edges_collection.insert(
-                        (node_id.to_string(), id.to_string()),
+                        (node_id.clone(), id),
                         match edge.as_ref().borrow().edge_value.borrow() {
                             Some(val) => val.to_string(),
                             None => "".to_string(),
@@ -302,13 +328,12 @@ mod tests {
         graph.delete_edge(&v1, &v2).unwrap();
     }
     #[test]
-    #[should_panic]
     fn delete_missing_edge() {
         let mut graph = Graph::new();
         let v1 = graph.add_vertex(1, Some("vertex 1"));
         let v2 = graph.add_vertex(2, Some("vertex 2"));
         graph.add_edge(Some("edge between v1 and v2"), &v1, &v2);
         graph.delete_edge(&v1, &v2).unwrap();
-        graph.delete_edge(&v1, &v2).unwrap();
+        assert!(graph.delete_edge(&v1, &v2).is_err());
     }
 }
