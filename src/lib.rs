@@ -116,12 +116,7 @@ where
             None => println!("Couldn't find vertex :/"),
         };
     }
-    pub fn add_edge(
-        &self,
-        edge_value: Option<E>,
-        v1: &RcVertex<E, I, V>,
-        v2: &RcVertex<E, I, V>,
-    ) {
+    pub fn add_edge(&self, edge_value: Option<E>, v1: &RcVertex<E, I, V>, v2: &RcVertex<E, I, V>) {
         //  since edge is connected to both points, they should share same value
         let edge_value = Rc::new(edge_value);
         v1.as_ref()
@@ -139,11 +134,7 @@ where
                 child: Rc::downgrade(v1),
             })));
     }
-    fn check_edge(
-        &self,
-        v1: &RcVertex<E, I, V>,
-        v2: &RcVertex<E, I, V>,
-    ) -> Result<usize> {
+    fn check_edge(&self, v1: &RcVertex<E, I, V>, v2: &RcVertex<E, I, V>) -> Result<usize> {
         let pos = match v1.as_ref().borrow().edges.iter().position(|edge| {
             match edge.as_ref().borrow().child.upgrade() {
                 Some(child) => child == *v2,
@@ -151,7 +142,16 @@ where
             }
         }) {
             Some(u) => u,
-            None => return Err(Error::new(ErrorKind::NotFound, "")),
+            None => {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!(
+                        "{} in not linked to {}",
+                        v1.as_ref().borrow().id,
+                        v2.as_ref().borrow().id,
+                    ),
+                ))
+            }
         };
         Ok(pos)
     }
@@ -214,7 +214,12 @@ where
             for edge in &node.as_ref().borrow().edges {
                 let id = match &edge.as_ref().borrow().child.upgrade() {
                     Some(child) => child.as_ref().borrow().id.clone(),
-                    None => return Err(Error::new(ErrorKind::NotFound, "")),
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::NotFound,
+                            format!("Second poit of the edge {} not found.", &node_id),
+                        ))
+                    }
                 }
                 .to_string();
                 // our edges are bidirectional and we have to check for inverted duplicates
@@ -249,8 +254,7 @@ impl Graph<String, String, String> {
             split.next().expect("Failed to parse edges."),
         );
         let mut data;
-        let mut point_storage: HashMap<&str, RcVertex<String, String, String>> =
-            HashMap::new();
+        let mut point_storage: HashMap<&str, RcVertex<String, String, String>> = HashMap::new();
         for point in points.lines() {
             data = point.trim().split_ascii_whitespace();
             let point = data.next().expect("Failet to parse point.");
