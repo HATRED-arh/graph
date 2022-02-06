@@ -90,6 +90,17 @@ where
     vertices: Vec<RcVertex<E, I, V>>,
 }
 
+impl<E, I, V> Default for Graph<E, I, V>
+where
+    E: Display + Clone,
+    I: PartialEq + Display + Hash + Clone,
+    V: PartialEq + Display + Hash + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<E, I, V> Graph<E, I, V>
 where
     E: Display + Clone,
@@ -247,7 +258,7 @@ impl Graph<String, String, String> {
     pub fn create_from_file(filename: &str) -> Graph<String, String, String> {
         let mut graph = Graph::new();
         let data = fs::read_to_string(filename).unwrap();
-        let mut split = data.split("#");
+        let mut split = data.split('#');
 
         let (points, edges) = (
             split.next().expect("Failed to parse vertices."),
@@ -271,14 +282,12 @@ impl Graph<String, String, String> {
             let value = extract_value(data);
             graph.add_edge(
                 value,
-                point_storage.get(point1).expect(&format!(
-                    "Failed to add edge. Point {} does not exist",
-                    point1
-                )),
-                point_storage.get(point2).expect(&format!(
-                    "Failed to add edge. Point {} does not exist",
-                    point2
-                )),
+                point_storage.get(point1).unwrap_or_else(|| {
+                    panic!("Failed to add edge. Point {} does not exist", point1)
+                }),
+                point_storage.get(point2).unwrap_or_else(|| {
+                    panic!("Failed to add edge. Point {} does not exist", point2)
+                }),
             );
         }
         graph
@@ -290,9 +299,9 @@ fn extract_value(data: SplitAsciiWhitespace) -> Option<String> {
         .collect::<String>()
         .trim()
     {
-        val if val.is_empty() => return Option::None,
-        val => return Some(val.to_string()),
-    };
+        val if val.is_empty() => Option::None,
+        val => Some(val.to_string()),
+    }
 }
 
 #[cfg(test)]
